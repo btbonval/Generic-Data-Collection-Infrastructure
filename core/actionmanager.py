@@ -182,13 +182,16 @@ class CoreActionManager(object):
                 # run any setup functionality
                 thread.before_firing()
 
-                # run the action in its own thread
-                thread.start()
+                # register this as a running thread prior to running it.
+                # otherwise the other thread might complete before this thread
+                # can update the dictionary.
 
                 # track thread. each threaded action should be unique.
                 if self.thread_mapping.has_key(thread):
                     log.warning('Threaded action %s already being tracked!', thread)
                 self.thread_mapping[thread] = key
+                # run the action in its own thread
+                thread.start()
 
             except Exception, e:
                 log.error('Failed to start thread for %s.', action.__class__, exc_info=True)
@@ -204,13 +207,15 @@ class CoreActionManager(object):
         # call any action cleanup functionality
         action.after_fired()
 
-        # remove the action from action manager tracking
+        # remove the thread from action manager tracking
         try:
             del self.thread_mapping[action]
         except KeyError, e:
             # This should never occur! Actions should only cleanup if they
             # were properly called by action manager and added to tracking.
-            log.error('Failed to cleanup thread reference for %s: missing from tracking dictionary.', action.__class__)
+            msg = 'Failed to cleanup thread reference for {0}: missing from tracking dictionary.'.format(action)
+            log.error(msg)
+            raise RuntimeError(msg)
 
 # Create the singleton.
 action_manager = CoreActionManager()
