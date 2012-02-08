@@ -90,7 +90,7 @@ class CoreActionManager(object):
         keys = []
         for i_state in initial_state:
             for f_state in final_state:
-                keys.append(tuple([observation, i_state.primary(), f_state.primary()]))
+                keys.append(tuple([observation, i_state.get_primary(), f_state.get_primary()]))
 
         # Create or update the mapping depending upon whether it already
         # exists or not.
@@ -132,7 +132,7 @@ class CoreActionManager(object):
         keys = []
         for i_state in initial_state:
            for f_state in final_state:
-               keys.append((observation, i_state.primary(), f_state.primary()))
+               keys.append((observation, i_state.get_primary(), f_state.get_primary()))
 
         # Remove the given action from the state change if it is defined.
         # Prevent writing this data while another thread might be reading it.
@@ -140,6 +140,9 @@ class CoreActionManager(object):
             for key in keys:
                 if self.action_mapping.has_key(key):
                     self.action_mapping[key].difference_update(action)
+                    if len(self.action_mapping[key]) == 0:
+                        # Don't waste memory to keep no actions stored.
+                        del self.action_mapping[key]
 
     def check_state_change(self, observation, initial_state, final_state):
         '''
@@ -152,7 +155,7 @@ class CoreActionManager(object):
         # TODO contract to ensure states are singular and not collections.
 
         # Create a tuple for the action response mapping.
-        key = (observation, initial_state.primary(), final_state.primary())
+        key = (observation, initial_state.get_primary(), final_state.get_primary())
 
         # Do not bother pursuing any actions if none are defined.
         if not self.action_mapping.has_key(key): return

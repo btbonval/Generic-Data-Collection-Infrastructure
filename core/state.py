@@ -174,7 +174,7 @@ class State(object):
             selfcopy = copy.deepcopy(self)
         return selfcopy
 
-    def primary(self):
+    def get_primary(self):
         '''
         Returns primary attributes within a tuple for hashing purposes.
         '''
