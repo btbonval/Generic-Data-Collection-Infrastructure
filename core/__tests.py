@@ -7,6 +7,7 @@ Licensed under the Creative Commons Attribution Unported License 3.0
 http://creativecommons.org/licenses/by/3.0/ 
 '''
 
+import sys
 import time
 from gdci.core.state import State
 from gdci.core.state import StateCollection
@@ -15,6 +16,32 @@ from gdci.core.observable import CoreObservable
 from gdci.core.observable import CoreObserver
 from gdci.core.actionmanager import CoreActionManager
 from gdci.core.actionmanager import action_manager
+
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+# ---
+
+# Could write to /dev/null but won't work on Windows(R)(TM)(Royalties)
+# This will work for everyone.
+class NullDevice():
+    def write(self, data): pass
+null = NullDevice()
+
+stderr = sys.stderr
+stdout = sys.stdout
+def suppress_errors():
+    global null
+    logging.root.setLevel(logging.CRITICAL)
+    sys.stdout = null
+    sys.stderr = null
+
+def show_errors():
+    global stderr
+    global stdout
+    sys.stderr = stderr
+    sys.stdout = stdout
+    logging.root.setLevel(logging.DEBUG)
 
 # ---
 
@@ -134,8 +161,10 @@ def action_tests():
     # fire_action should get called when CoreAction is started.
     flip_bit = False
     test1 = ActionTest1(None, None, None)
+    suppress_errors() # Expect an error, quiet it.
     test1.start()
     test1.join()
+    show_errors()
     assert(flip_bit is True)
 
     # before_firing would be called by the action manager, call it manually
@@ -145,8 +174,10 @@ def action_tests():
     test2 = ActionTest2(None, None, None)
     test2.before_firing()
     assert(test2.value is True)
+    suppress_errors() # Expect an error, quiet it.
     test2.start()
     test2.join()
+    show_errors()
     assert(flip_bit is True)
     assert(test2.value is False)
 
@@ -225,12 +256,17 @@ def observable_tests():
         assert(False)
 
     # Unregister actions that haven't been registered.
+    suppress_errors() # Expect an error, quiet it.
     try:
+        # TODO: Determine why this line magically bypasses all suppression!!
         test1.unregister_action(ActionTest1, State(True, False), \
                                 State(False, False))
         assert(False)
+    except AssertionError:
+        assert(False)
     except:
         pass
+    show_errors()
 
     # Test secondary attribute passes into State
     test4 = DataObservable()

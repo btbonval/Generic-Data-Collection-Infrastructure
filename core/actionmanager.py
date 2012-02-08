@@ -137,12 +137,21 @@ class CoreActionManager(object):
         # Remove the given action from the state change if it is defined.
         # Prevent writing this data while another thread might be reading it.
         with self.access_lock:
+            # Atomically check for errors first, then proceed with actions.
             for key in keys:
-                if self.action_mapping.has_key(key):
-                    self.action_mapping[key].difference_update(action)
-                    if len(self.action_mapping[key]) == 0:
-                        # Don't waste memory to keep no actions stored.
-                        del self.action_mapping[key]
+                if not self.action_mapping.has_key(key):
+                    msg = 'Action Manager cannot unregister {1} from {0} as {0} is not registered at all.'.format(key, action)
+                    log.error(msg)
+                    raise KeyError(msg)
+                if len(self.action_mapping[key].intersection(action)) != 1:
+                    msg = 'Action Manager cannot unregister {1} from {0} as {1} is not registered with {0}.'.format(key, action)
+                    log.error(msg)
+                    raise KeyError(msg)
+            for key in keys:
+                self.action_mapping[key].difference_update(action)
+                if len(self.action_mapping[key]) == 0:
+                    # Don't waste memory to keep no actions stored.
+                    del self.action_mapping[key]
 
     def check_state_change(self, observation, initial_state, final_state):
         '''
