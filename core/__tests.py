@@ -283,12 +283,12 @@ def am_tests():
                                       State(False,False))
     assert(not flip_bit)
 
-    flip_bit = False
-    # make sure actions can be unregistered without affecting the others
+    # make sure actions can be unregistered
     test3.unregister_action(ActionTest2, State(False,False), State(False,True))
     action_manager.check_state_change(test3, State(False,False), \
                                       State(False,True))
     assert(not flip_bit)
+    # make sure other actions are unaffected by the unregistration
     action_manager.check_state_change(test3, State(False,False), \
                                       State(True,True))
     assert(flip_bit)

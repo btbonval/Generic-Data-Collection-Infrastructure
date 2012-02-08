@@ -15,6 +15,10 @@ Licensed under the Creative Commons Attribution Unported License 3.0
 http://creativecommons.org/licenses/by/3.0/ 
 '''
 
+# TODO implement an action queue so that actions are ordered FIFO
+# and so that any particular action takes place atomically of other instances
+# of itself.
+
 import logging
 import threading
 from gdci.core.state import StateCollection
@@ -94,9 +98,9 @@ class CoreActionManager(object):
         with self.access_lock:
             for key in keys:
                 if self.action_mapping.has_key(key):
-                    self.action_mapping[key].update(action)
+                    self.action_mapping[key].update(action.copy())
                 else:
-                    self.action_mapping[key] = action
+                    self.action_mapping[key] = action.copy()
 
     def disassociate_action_from_state_change(self, action, observation,
                                               initial_state, final_state):

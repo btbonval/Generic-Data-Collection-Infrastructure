@@ -19,6 +19,7 @@ http://creativecommons.org/licenses/by/3.0/
 '''
 
 import copy
+import threading
 
 class State(object):
     '''
@@ -91,6 +92,7 @@ class State(object):
         # TODO enable creation of secondary attributes outside of construction
         # Secondary Attributes stored in a dictionary.
         self.secondary_attributes = {}
+        self.lock = threading.RLock()
 
     def __str__(self):
         '''
@@ -133,6 +135,32 @@ class State(object):
         # Union the State Collections and return them.
         return selfSC | otherSC
 
+    def __deepcopy__(self, memo):
+        '''
+        The RLock is unsafe to deepcopy as it is in use while copying.
+        Mark the RLock as having been already copied.
+        This workaround was developed by debugging through the deepcopy process
+        and finding the correct method to invoke for this class.
+        '''
+
+        # Mark the RLock as having been copied already
+        memo[id(self.lock)] = None
+
+        # Can no longer call deepcopy(self) or it will result in an infinite
+        # loop. The following calls are made by deepcopy if no __deepcopy__
+        # function is defined for this class. It would be great if there was
+        # some kind of one-time bypass of this function for performing deep
+        # copies.
+        # TODO hack getattr to count recursive calls into __deepcopy__ and
+        # return None after it has already been called
+        rv = self.__reduce_ex__(2)
+        selfcopy = copy._reconstruct(self, rv, 1, memo)
+
+        # Add a new RLock into the copy
+        selfcopy.lock = threading.RLock()
+
+        return selfcopy
+
     def copy(self):
         '''
         Return a new State object containing data copies, not references, to
@@ -141,14 +169,22 @@ class State(object):
         context.
         '''
 
-        return copy.deepcopy(self)
+        # Perform a deep copy only after no data can be written.
+        with self.lock:
+            selfcopy = copy.deepcopy(self)
+        return selfcopy
 
     def primary(self):
         '''
         Returns primary attributes within a tuple for hashing purposes.
         '''
-        return tuple([self.is_operating, self.result])
 
+        # Access primary attributes in a thread-safe manner.
+        with self.lock:
+            is_operating = self.is_operating
+            result = self.result
+        return tuple([is_operating, result])
+       
 class StateCollection(set):
     '''
     StateCollection is a fancy wrapper around set so that a set of States can
