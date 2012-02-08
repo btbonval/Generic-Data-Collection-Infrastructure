@@ -17,10 +17,13 @@ Licensed under the Creative Commons Attribution Unported License 3.0
 http://creativecommons.org/licenses/by/3.0/ 
 '''
 
+import logging
 import threading
 import time
 from gdci.core.actionmanager import action_manager
 from gdci.core.state import State
+
+log = logging.getLogger('Observables')
 
 class CoreObservable(object):
     '''
@@ -47,6 +50,9 @@ class CoreObservable(object):
         get_observation should be defined by subclasses to perform whatever
         observing is desired.
         This function must return True, False, or None.
+        Alternatively, it may return a tuple containing the above as the
+        first element and the second element being a dictionary of additional
+        stateful information: (result, dict)
         '''
 
         raise NotImplementedError("CoreObservable must be extended by a subclass and get_observation must be overridden.")
@@ -72,11 +78,40 @@ class CoreObservable(object):
             # Retain old result but note that the observation is stale.
             result = self.__current_state.result
             observed = False
-        new_state = State(observed, result)
+
+        # Result may be [True, False, None] or...
+        # Result may be a tuple of (result, dictionary).
+        # in this case, parse out result and cache dictionary into the state.
+        new_state = None
+        new_attribs = None
+        try:
+            if len(result) == 2 and result[0] in [True, False, None] and \
+                 result[1].__class__ is dict:
+                new_state = State(observed, result[0])
+                new_attribs = result[1]
+            else:
+                msg = 'get_observation() in %s must return True, False, None, or a tuple of (truth value, dictionary); returned %s.' %(str(self), str(result))
+                log.exception(msg)
+                raise TypeError(msg)
+        except TypeError:
+            if result in [True, False, None]:
+                new_state = State(observed, result)
+                new_attribs = {}
+            else:
+                msg = 'get_observation() in %s must return True, False, None, or a tuple of (truth value, dictionary); returned %s.' %(str(self), str(result))
+                log.exception(msg)
+                raise TypeError(msg)
 
         # If the state remains the same, do not report anything.
-        # Return the old State.
-        if self.__current_state == new_state: return self.__current_state
+        # Update the current state with attribs and return the old State.
+        if self.__current_state == new_state:
+            with self.__current_state.lock:
+                self.__current_state.secondary_attributes.update(new_attribs)
+            return self.__current_state
+
+        # Update the attributes into the new state.
+        with new_state.lock:
+            new_state.secondary_attributes.update(new_attribs)
 
         # These states could change before the Action Manager can call actions
         # in response; thus we must freeze the states as a copy.

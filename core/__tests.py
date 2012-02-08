@@ -94,6 +94,23 @@ def state_tests():
     assert(State(False,None) not in test11)
     assert(State(None,None) not in test11)
 
+    # Test secondary attributes, using objects
+    test12 = State(None,None)
+    test13 = State(None,None)
+    test12.set_secondary('test', test13)
+    assert(test12.get_secondary('test') is test13)
+
+    # Test deep copy
+    # modify an object in test12's secondary dictionary.
+    test13.set_secondary('token', None)
+    # copy
+    test14 = test12.copy()
+    # both test12 and test14 should have different objects with same data
+    assert(test12.get_secondary('test') is test13)
+    assert(test14.get_secondary('test') is not test13)
+    assert(test12.get_secondary('test').get_secondary('token') is None)
+    assert(test14.get_secondary('test').get_secondary('token') is None)
+
 # ---
 
 flip_bit = False
@@ -149,6 +166,16 @@ class CrashedObservable(CoreObservable):
     def get_observation(self):
         raise Exception("Fail.")
 
+class DataObservable(CoreObservable):
+    counter = 0
+    def get_observation(self):
+        self.counter = self.counter + 1
+        return (True, {'data': self.counter})
+
+class DataCrashedObservable(CoreObservable):
+    def get_observation(self):
+        return (True, None, None)
+
 def observable_tests():
     # Check construction
     test1 = TrueObservable()
@@ -203,6 +230,23 @@ def observable_tests():
                                 State(False, False))
         assert(False)
     except:
+        pass
+
+    # Test secondary attribute passes into State
+    test4 = DataObservable()
+    # get state from observable's check_observation method
+    test5 = test4.check_observation()
+    assert(test5.get_secondary('data') == 1)
+    test5 = test4.check_observation()
+    assert(test5.get_secondary('data') == 2)
+    test5 = test4.check_observation()
+    assert(test5.get_secondary('data') == 3)
+
+    test6 = DataCrashedObservable()
+    try:
+        test6.check_observation()
+        assert(False)
+    except TypeError:
         pass
 
 # ---

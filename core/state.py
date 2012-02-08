@@ -184,6 +184,27 @@ class State(object):
             is_operating = self.is_operating
             result = self.result
         return tuple([is_operating, result])
+
+    def set_secondary(self, key, value):
+        '''
+        Access secondary attributes as a dictionary. Supply a key for the
+        attribute's name. The value will be stored in a thead-safe manner.
+        '''
+
+        # Access secondary attributes in a thread-safe manner.
+        with self.lock:
+            self.secondary_attributes[key] = value
+
+    def get_secondary(self, key):
+        '''
+        Access secondary attributes as a dictionary. Supply a key for the
+        attribute's name. The value will be returned in a thread-safe manner.
+        '''
+
+        # Access secondary attributes in a thread-safe manner.
+        with self.lock:
+            retval = self.secondary_attributes[key]
+        return retval
        
 class StateCollection(set):
     '''
