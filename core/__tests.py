@@ -185,6 +185,11 @@ def action_tests():
 
 # ---
 
+# TODO test the rwlock ... requires multiple threads
+# TODO quiet down the debug output for rwlock
+
+# ---
+
 class TrueObservable(CoreObservable):
     def get_observation(self):
         return True
@@ -388,8 +393,11 @@ def am_tests():
     finish = time.time()
     test3.stop(blocking=True)
     # arbitrary error bounds of 0.15 on either side
-    assert (0.35 < finish - begin)
-    assert (finish - begin < 0.65)
+    assert (0.35 < finish - begin < 0.65)
+
+    # Test that bookkeeping functions are being cleared.
+    assert(action_manager.action_queue.empty())
+    assert(len(action_manager.thread_mapping) == 0)
 
 # ---
 

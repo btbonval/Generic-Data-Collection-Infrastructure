@@ -15,14 +15,13 @@ Licensed under the Creative Commons Attribution Unported License 3.0
 http://creativecommons.org/licenses/by/3.0/ 
 '''
 
-# TODO implement an action queue so that actions are ordered FIFO
-# and so that any particular action takes place atomically of other instances
-# of itself.
-
 import logging
 import threading
+from Queue import Queue
+
 from gdci.core.state import StateCollection
 from gdci.core.singleton import Singleton
+from gdci.core.rwlock import ReadWriteLock
 
 # Initialize logging utility.
 log = logging.getLogger('ActionManager')
@@ -50,8 +49,7 @@ class CoreActionManager(object):
 
         # Prepare a mutex to prevent concurrent race conditions when
         # modifying and accessing data in this object by multiple threads.
-        # TODO implement this as a Read/Write Lock
-        self.access_lock = threading.RLock()
+        self.access_lock = ReadWriteLock()
 
         # Initialize an empty mapping of (observation, state, state) to 
         # a set of action classes.
@@ -59,6 +57,8 @@ class CoreActionManager(object):
         # Initialize an empty mapping of thread to a set of
         # (observation, state, state) tuples.
         self.thread_mapping = {}
+        # Maintain a sequence of actions so that firing order is preserved.
+        self.action_queue = Queue()
 
     def associate_action_with_state_change(self, action, observation,
                                            initial_state, final_state):
@@ -95,7 +95,7 @@ class CoreActionManager(object):
         # Create or update the mapping depending upon whether it already
         # exists or not.
         # Prevent writing this data while another thread might be reading it.
-        with self.access_lock:
+        with self.access_lock.Write:
             for key in keys:
                 if self.action_mapping.has_key(key):
                     self.action_mapping[key].update(action.copy())
@@ -134,23 +134,26 @@ class CoreActionManager(object):
            for f_state in final_state:
                keys.append((observation, i_state.get_primary(), f_state.get_primary()))
 
+        # While there are two for loops that could be made one, the work
+        # performed at the end  requires a write lock. It is not worth
+        # holding the lock for the additional time spent, thus extra loop.
+
+        # Atomically check for errors prior to removing actions.
+        for key in keys:
+            if not self.action_mapping.has_key(key):
+                msg = 'Action Manager cannot unregister {1} from {0} as {0} is not registered at all.'.format(key, action)
+                log.error(msg)
+                raise KeyError(msg)
+            if len(self.action_mapping[key].intersection(action)) != 1:
+                msg = 'Action Manager cannot unregister {1} from {0} as {1} is not registered with {0}.'.format(key, action)
+                log.error(msg)
+                raise KeyError(msg)
         # Remove the given action from the state change if it is defined.
         # Prevent writing this data while another thread might be reading it.
-        with self.access_lock:
-            # Atomically check for errors first, then proceed with actions.
-            for key in keys:
-                if not self.action_mapping.has_key(key):
-                    msg = 'Action Manager cannot unregister {1} from {0} as {0} is not registered at all.'.format(key, action)
-                    log.error(msg)
-                    raise KeyError(msg)
-                if len(self.action_mapping[key].intersection(action)) != 1:
-                    msg = 'Action Manager cannot unregister {1} from {0} as {1} is not registered with {0}.'.format(key, action)
-                    log.error(msg)
-                    raise KeyError(msg)
+        with self.access_lock.Write:
             for key in keys:
                 self.action_mapping[key].difference_update(action)
                 if len(self.action_mapping[key]) == 0:
-                    # Don't waste memory to keep no actions stored.
                     del self.action_mapping[key]
 
     def check_state_change(self, observation, initial_state, final_state):
@@ -167,15 +170,39 @@ class CoreActionManager(object):
         key = (observation, initial_state.get_primary(), final_state.get_primary())
 
         # Do not bother pursuing any actions if none are defined.
-        if not self.action_mapping.has_key(key): return
+        # Otherwise build a list of actions
+        with self.access_lock.Read:
+            if not self.action_mapping.has_key(key):
+                actions = None
+            else:
+                actions = self.action_mapping[key]
+        if actions is None:
+            return
 
-        # Build a list of actions
-        # Prevent reading this data while another thread might be writing it.
-        with self.access_lock:
-            actions = self.action_mapping[key]
+        # Queue each action to be fired.
+        with self.access_lock.Write:
+            for action in actions:
+                self.action_queue.put( (action, observation, initial_state, final_state) )
 
-        # For each action, spawn a thread 
-        for action in actions:
+        # Run all queued actions
+        self.run_actions()
+
+    def run_actions(self):
+        '''
+        Consume actions from the action queue, fire them, and resolve them.
+        '''
+        # TODO split this up so a single action is called at a time
+
+        # Draw off the actions from the queue while locking to modify.
+        queued_actions = []
+        with self.access_lock.Write:
+            while not self.action_queue.empty():
+                queued_actions.append( self.action_queue.get() )
+
+        # Process actions in order and kick them off.
+        for queued_action in queued_actions:
+            action, observation, initial_state, final_state = queued_action
+            key = (observation, initial_state.get_primary(), final_state.get_primary())
             try:
                 # initialize an action object
                 thread = action(observation, initial_state, final_state)
@@ -187,9 +214,10 @@ class CoreActionManager(object):
                 # can update the dictionary.
 
                 # track thread. each threaded action should be unique.
-                if self.thread_mapping.has_key(thread):
-                    log.warning('Threaded action %s already being tracked!', thread)
-                self.thread_mapping[thread] = key
+                with self.access_lock.Read:
+                    if self.thread_mapping.has_key(thread):
+                        log.warning('Threaded action %s already being tracked!', thread)
+                    self.thread_mapping[thread] = key
                 # run the action in its own thread
                 thread.start()
 
@@ -208,14 +236,16 @@ class CoreActionManager(object):
         action.after_fired()
 
         # remove the thread from action manager tracking
-        try:
-            del self.thread_mapping[action]
-        except KeyError, e:
-            # This should never occur! Actions should only cleanup if they
-            # were properly called by action manager and added to tracking.
-            msg = 'Failed to cleanup thread reference for {0}: missing from tracking dictionary.'.format(action)
-            log.error(msg)
-            raise RuntimeError(msg)
+        # lock for modifications.
+        with self.access_lock.Write:
+            try:
+                del self.thread_mapping[action]
+            except KeyError, e:
+                # This should never occur! Actions should only cleanup if they
+                # were properly called by action manager and added to tracking.
+                msg = 'Failed to cleanup thread reference for {0}: missing from tracking dictionary.'.format(action)
+                log.error(msg)
+                raise RuntimeError(msg)
 
 # Create the singleton.
 action_manager = CoreActionManager()
