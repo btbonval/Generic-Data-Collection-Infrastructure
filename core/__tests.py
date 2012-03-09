@@ -9,16 +9,25 @@ http://creativecommons.org/licenses/by/3.0/
 
 import sys
 import time
+import logging
+import threading
+
 from gdci.core.state import State
 from gdci.core.state import StateCollection
 from gdci.core.action import CoreAction
-from gdci.core.observable import CoreObservable
+from gdci.core.rwlock import ReadWriteLock
 from gdci.core.observable import CoreObserver
-from gdci.core.actionmanager import CoreActionManager
+from gdci.core.observable import CoreObservable
 from gdci.core.actionmanager import action_manager
+from gdci.core.actionmanager import CoreActionManager
 
-import logging
+# ---
+
+# In testing, we like output!
 logging.basicConfig(level=logging.DEBUG)
+
+# Dogpile's logging is too verbose at DEBUG for these testing needs.
+logging.getLogger('dogpile.readwrite_lock').setLevel(logging.INFO)
 
 # ---
 
@@ -140,6 +149,118 @@ def state_tests():
 
 # ---
 
+module_rwlock = None
+
+def greedy_reader():
+    # Acquires a read lock and sits on it
+    # Throws a fit if flip_bit is False
+    global module_rwlock
+    global flip_bit
+
+    with module_rwlock.Read:
+        time.sleep(1)
+        if not flip_bit:
+            raise Exception('Greedy Reader only likes True flip_bits!')
+
+def greedy_writer():
+    # Acquires a write lock and sits on it
+    global module_rwlock
+    global flip_bit
+
+    with module_rwlock.Write:
+        time.sleep(1)
+        flip_bit = True
+
+def rwlock_tests():
+    global module_rwlock
+    global flip_bit
+
+    # Check construction
+    module_rwlock = ReadWriteLock()
+
+    flip_bit = False
+    # Double test locks to ensure they cleanly unlock.
+    # Test Read lock
+    with module_rwlock.Read:
+        assert(flip_bit == False)
+    assert(flip_bit == False)
+    # Test Write lock
+    with module_rwlock.Write:
+        flip_bit = True
+    assert(flip_bit == True)
+    # Test Read lock
+    with module_rwlock.Read:
+        assert(flip_bit == True)
+    assert(flip_bit == True)
+    # Test Write lock
+    with module_rwlock.Write:
+        flip_bit = False
+    assert(flip_bit == False)
+
+    flip_bit = True
+    # Test that multiple Reads can overlap.
+    greedy_reader_thread = []
+    # Create readers that will sit on the lock.
+    num_readers = 2
+    for i in range(0, num_readers):
+        greedy_reader_thread.append(threading.Thread(target=greedy_reader))
+        greedy_reader_thread[i].start()
+    # Ensure the above sitting read locks don't block
+    begin = time.time()
+    with module_rwlock.Read:
+        assert(flip_bit == True)
+    finish = time.time()
+    for i in range(0, num_readers):
+        greedy_reader_thread[i].join()
+    # 0.5 is sort of arbitrary; it should not take 1 second, period.
+    # It likely would not take longer than 0.5 seconds.
+    assert(finish - begin < 0.5)
+
+    # Test that Reading will block Writing.
+    flip_bit = True
+    greedy_reading_thread = threading.Thread(target=greedy_reader)
+    greedy_reading_thread.start()
+    begin = time.time()
+    with module_rwlock.Write:
+        flip_bit = False
+    finish = time.time()
+    greedy_reading_thread.join()
+    assert(flip_bit == False)
+    # 0.5 is sort of arbitrary; it should take about a 1 second. 
+    # It quite likely should take more than 0.5 seconds.
+    # Less than that could indicate a non-block.
+    assert(finish - begin > 0.5)
+
+    # Test that Writing will block Reading
+    flip_bit = False
+    greedy_writing_thread = threading.Thread(target=greedy_writer)
+    greedy_writing_thread.start()
+    begin = time.time()
+    with module_rwlock.Read:
+        # This should not read until the writer has modified the value
+        # /and/ released the lock.
+        assert(flip_bit == True)
+    finish = time.time()
+    greedy_writing_thread.join()
+    assert(finish - begin > 0.5)
+
+    # Test that Writing will block Writing.
+    flip_bit = False
+    greedy_writing_thread = threading.Thread(target=greedy_writer)
+    greedy_writing_thread.start()
+    begin = time.time()
+    # By the time the write unlocks, the other writer should have flipped the
+    # bit.
+    with module_rwlock.Write:
+        assert(flip_bit == True)
+        flip_bit = False
+    finish = time.time()
+    greedy_writing_thread.join()
+    assert(flip_bit == False)
+    assert(finish - begin > 0.5)
+
+# ---
+
 flip_bit = False
 class ActionTest1(CoreAction):
     def fire_action(self):
@@ -182,11 +303,6 @@ def action_tests():
     assert(test2.value is False)
 
     #del flip_bit
-
-# ---
-
-# TODO test the rwlock ... requires multiple threads
-# TODO quiet down the debug output for rwlock
 
 # ---
 
@@ -406,6 +522,12 @@ if __name__ == '__main__':
     print "Running State tests."
     state_tests()
     print "State tests completed."
+
+    print ""
+
+    print "Running ReadWriteLock tests."
+    rwlock_tests()
+    print "ReadWriteLock tests completed."
 
     print ""
 
