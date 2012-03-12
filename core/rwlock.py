@@ -14,6 +14,10 @@ class ReadWriteLock(ReadWriteMutex):
         do some reading of the shared resource
     with rwlock.Write:
         do some writing on the shared resource
+    with rwlock.ReadOrNot:
+        do some reading unless the lock was blocked
+    with rwlock.WriteOrNot:
+        do some writing unless the lock was blocked
     '''
 
     def __init__(self, *args, **kwargs):
@@ -24,16 +28,17 @@ class ReadWriteLock(ReadWriteMutex):
         ReadWriteMutex.__init__(self, *args, **kwargs)
         self.Read = ReadWriteState(self, 'read')
         self.Write = ReadWriteState(self, 'write')
+        self.ReadOrNot = ReadWriteState(self, 'read', wait=False)
+        self.WriteOrNot = ReadWriteState(self, 'write', wait=False)
 
 class ReadWriteState(object):
     '''
     A proxy object for the ReadWriteLock that saves the Read or Write choice.
     '''
 
-    def __init__(self, parent_lock, state, *args, **kwargs):
+    def __init__(self, parent_lock, state, wait=True, *args, **kwargs):
         object.__init__(self, *args, **kwargs)
 
-        self.parent_lock = parent_lock
         if state == 'read':
             self.reader = True
         elif state == 'write':
@@ -41,12 +46,15 @@ class ReadWriteState(object):
         else:
             raise TypeError("Provided state must be either 'read' or 'write'.")
 
+        self.parent_lock = parent_lock
+        self.do_wait = wait
+
     def __enter__(self, *args, **kwargs):
         # Determine state, then call appropriate parent acquire function.
         if self.reader:
-            self.parent_lock.acquire_read_lock(wait=True)
+            self.parent_lock.acquire_read_lock(wait=self.do_wait)
         else:
-            self.parent_lock.acquire_write_lock(wait=True)
+            self.parent_lock.acquire_write_lock(wait=self.do_wait)
 
     def __exit__(self, *args, **kwargs):
         # Determine state, then call appropriate parent acquire function.

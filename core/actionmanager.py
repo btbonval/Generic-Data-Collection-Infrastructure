@@ -164,7 +164,15 @@ class CoreActionManager(object):
         be collections of states.
         '''
 
-        # TODO contract to ensure states are singular and not collections.
+        # contract to ensure states are singular and not collections.
+        for check_variable in [initial_state, final_state]:
+            length_test = None
+            try:
+                length_test = len(check_variable)
+            except TypeError:
+                pass
+            if length_test is not None:
+                raise TypeError('initial_state and final_state must not be collections.')
 
         # Create a tuple for the action response mapping.
         key = (observation, initial_state.get_primary(), final_state.get_primary())
