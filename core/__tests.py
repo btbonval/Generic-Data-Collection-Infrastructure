@@ -17,6 +17,7 @@ import threading
 from gdci.core.state import State
 from gdci.core.state import StateCollection
 from gdci.core.action import CoreAction
+from gdci.core.thread import CoreThread
 from gdci.core.observable import CoreObserver
 from gdci.core.observable import CoreObservable
 from gdci.core.actionmanager import action_manager
@@ -33,6 +34,15 @@ logging.basicConfig(level=logging.DEBUG)
 
 # Dogpile's logging is too verbose at DEBUG for these testing needs.
 logging.getLogger('dogpile.readwrite_lock').setLevel(logging.INFO)
+
+# Used to tell if a thread has done anything.
+flip_bit = False
+
+# Used to tell if a thread is looping.
+counter = 0
+
+# Shared lock for testing multiple threads' access.
+module_rwlock = None
 
 # ---
 
@@ -153,8 +163,6 @@ def state_tests():
     assert(test14.get_secondary('test').get_secondary('token') is None)
 
 # ---
-
-module_rwlock = None
 
 def greedy_reader():
     # Acquires a read lock and sits on it
@@ -343,11 +351,73 @@ def rwlock_tests():
 
 # ---
 
-# TODO test CoreThread
+class ThreadTestOneRun(CoreThread):
+    def before_loop(self):
+        global flip_bit
+        self.value = flip_bit
+    def main_loop(self):
+        self.value = not self.value
+    def after_loop(self):
+        global flip_bit
+        flip_bit = self.value
+
+class ThreadTestLoopRun(CoreThread):
+    def before_loop(self):
+        global counter
+        self.value = counter
+    def main_loop(self):
+        self.value = self.value + 1
+    def after_loop(self):
+        global counter
+        counter = self.value
+
+def thread_tests():
+    global flip_bit
+    global counter
+
+    # TODO these tests will be similar if not the same as action tests
+    # reduce duplication of efforts
+
+    # Test non-looping thread.
+    flip_bit = False
+    thread = ThreadTestOneRun(do_loop=False)
+    thread.start()
+    thread.join()
+    assert(flip_bit)
+
+    # Test stop() parameters
+    flip_bit = False
+    thread = ThreadTestOneRun(do_loop=False)
+    thread.start()
+    thread.stop(blocking=True) # Effectively same as calling join()
+    assert(flip_bit)
+    thread = ThreadTestOneRun(do_loop=False)
+    thread.start()
+    thread.stop(blocking=False) # Effectively does nothing.
+    time.sleep(0.05) # Wait for thread to finish.
+    assert(not flip_bit)
+    thread.join()
+
+    # The additional parameters should do nothing. Execution should be fast.
+    flip_bit  = False
+    large_delay = 50000
+    thread = ThreadTestOneRun(do_loop=False,loop_interval=large_delay,sleep_delay=large_delay))
+    thread.start()
+    begin = time.time()
+    thread.join()
+    finish = time.time()
+    assert(flip_bit)
+    # Need to put some kind of value in here, let's just say 2 seconds.
+    # This should not be on the order of seconds.
+    assert(finish - begin > 2)
+
+    # TODO these tests will be similar if not the same as observer tests
+    # reduce duplication of efforts
+
+    # TODO looping tests
 
 # ---
 
-flip_bit = False
 class ActionTest1(CoreAction):
     def perform_action(self):
         global flip_bit
@@ -489,7 +559,6 @@ def observable_tests():
 
 # ---
 
-counter = 0
 class CountingObserver(CoreObserver):
     def before_loop(self):
         global counter
@@ -613,6 +682,12 @@ if __name__ == '__main__':
     print "Running ReadWriteLock tests."
     rwlock_tests()
     print "ReadWriteLock tests completed."
+
+    print ""
+
+    print "Running CoreThread tests."
+    thread_tests()
+    print "CoreThread tests completed."
 
     print ""
 
