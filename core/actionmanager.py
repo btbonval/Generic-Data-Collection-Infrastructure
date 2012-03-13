@@ -16,7 +16,6 @@ http://creativecommons.org/licenses/by/3.0/
 '''
 
 import logging
-import threading
 from Queue import Queue
 
 from gdci.core.state import StateCollection
@@ -214,8 +213,6 @@ class CoreActionManager(object):
             try:
                 # initialize an action object
                 thread = action(observation, initial_state, final_state)
-                # run any setup functionality
-                thread.before_firing()
 
                 # register this as a running thread prior to running it.
                 # otherwise the other thread might complete before this thread
@@ -239,9 +236,6 @@ class CoreActionManager(object):
         Note that this function is being called from the action's thread,
         so calling action.join() would cause a deadlock or exception.
         '''
-
-        # call any action cleanup functionality
-        action.after_fired()
 
         # remove the thread from action manager tracking
         # lock for modifications.

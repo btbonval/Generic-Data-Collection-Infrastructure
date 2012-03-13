@@ -18,12 +18,15 @@ http://creativecommons.org/licenses/by/3.0/
 '''
 
 import logging
-import threading
 import time
-from gdci.core.actionmanager import action_manager
+
 from gdci.core.state import State
+from gdci.core.thread import CoreThread
+from gdci.core.actionmanager import action_manager
+
 
 log = logging.getLogger('Observables')
+
 
 class CoreObservable(object):
     '''
@@ -55,7 +58,7 @@ class CoreObservable(object):
         stateful information: (result, dict)
         '''
 
-        raise NotImplementedError("CoreObservable must be extended by a subclass and get_observation must be overridden.")
+        raise NotImplementedError("get_observation() must be overridden.")
 
     def check_observation(self):
         '''
@@ -145,105 +148,33 @@ class CoreObservable(object):
 
         action_manager.disassociate_action_from_state_change(action, self, initial_state, final_state)
 
-class CoreObserver(CoreObservable, threading.Thread):
+
+class CoreObserver(CoreObservable, CoreThread):
     '''
-    CoreObserver is meant to be extended. The get_observation function method
+    CoreObserver is meant to be extended. The get_observation() method
     must be overridden to define functionality for any given subclass.
     This class is a variant of CoreObservable that must be started as a
     thread by calling the start() method.
     '''
 
-    def __init__(self, loop_interval=1, sleep_delay=None, do_loop=True, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         '''
         Initialize local variables. Ensure that extended classes call this
         constructor.
-        do_loop is True or False to indicate whether the observe() method
-        should run in a loop.
-        loop_interval should be set to the fractional number of seconds
-        desired between calls to evaluate(); the timing is not guaranteed
-        especially if evaluate() executes longer than loop_interval.
-        sleep_delay is the interval to sleep in seconds and represents a
-        minimum interval between subsequent calls to evaluate(). If left None,
-        it will be calculated based on loop_interval.
+        This constructor calls both parent constructors.
+        All arguments will be passed to CoreThread, none will be passed to
+        CoreObservable.
         '''
 
-        # Run the observe() method in a loop with the given parameters. 
-        self.do_loop = do_loop
-        self.loop_interval = loop_interval
-        self.sleep_delay = sleep_delay
+        # Call parent constructors
+        CoreObservable.__init__(self)
+        CoreThread.__init__(self, *args, **kwargs)
 
-        # TODO sending arguments to all constructors might need to be rethought
-        CoreObservable.__init__(self, *args, **kwargs)
-        threading.Thread.__init__(self, *args, **kwargs)
 
-    def before_run(self):
+    def main_loop(self):
         '''
-        before_run is intended to be called prior to the thread running.
-        Override it to do any necessary setup.
-        '''
-        pass
-
-    def after_run(self):
-        '''
-        after_run is intended to be called when the thread is completing.
-        Override it to do any necessary cleanup.
-        '''
-        pass
-
-    def run(self):
-        '''
-        This function will be called by threading.Thread and the code will be
-        run in its own thread. Effectively this function will lay out a
-        sequence of functions that may be overridden. This function should
-        not be overridden.
+        Make cycled calls to check_observation(), which requires
+        get_observation() be overridden.
         '''
 
-        # prepare any needed functionality
-        self.before_run()
-
-        # Arbitrarily set sleep_delay to be some small fraction of the
-        # expected loop duration.
-        if self.sleep_delay is None: 
-            self.sleep_delay = self.loop_interval / 10.0
-
-        # the main loop of this thread is to call observe in a loop
-        last_run = time.time() - 2*self.loop_interval
-        while self.do_loop:
-
-            # Delay until the next loop interval has begun
-            # If do_loop is canceled prior to that, abort wait cycles.
-            #while (time.time() - last_run) < self.loop_interval:
-            while self.do_loop and (time.time() - last_run) < self.loop_interval:
-                time.sleep(self.sleep_delay)
-
-            # do_loop might have been canceled during wait. abort execution.
-            if not self.do_loop: 
-                break
-
-            # mark time before beginning the observation so that its runtime
-            # does not count against the next interval's start time.
-            last_run = time.time()
-
-            # run custom code
-            self.check_observation()
-
-        # clean up
-        self.after_run()
-
-    def stop(self, cancel_next_task=False, blocking=False):
-        '''
-        Stop running this thread's loop. cancel_next_task will determine if
-        the next loop's get_observation call is made, or if it should be
-        canceled prior to the next call. blocking calls join() to await thread
-        completion, and should never be set to True when being called from
-        its own thread.
-        '''
-
-        # TODO implement cancel task so that it can cancel the sleep time
-
-        # end loop cycles.
-        self.do_loop = False
-
-        # another thread will typically call stop. block on join() if desired.
-        if blocking: 
-            self.join()
+        self.check_observation()

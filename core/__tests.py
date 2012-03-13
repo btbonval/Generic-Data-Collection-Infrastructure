@@ -261,25 +261,29 @@ def rwlock_tests():
 
 # ---
 
+# TODO test CoreThread
+
+# ---
+
 flip_bit = False
 class ActionTest1(CoreAction):
-    def fire_action(self):
+    def perform_action(self):
         global flip_bit
         flip_bit = True
 
 class ActionTest2(CoreAction):
-    def before_firing(self):
+    def setup(self):
         self.value = True
-    def fire_action(self):
+    def perform_action(self):
         global flip_bit
         flip_bit = self.value
-    def after_fired(self):
+    def cleanup(self):
         self.value = False
  
 def action_tests():
     global flip_bit
 
-    # fire_action should get called when CoreAction is started.
+    # perform_action should get called when CoreAction is started.
     flip_bit = False
     test1 = ActionTest1(None, None, None)
     suppress_errors() # Expect an error, quiet it.
@@ -288,13 +292,8 @@ def action_tests():
     show_errors()
     assert(flip_bit is True)
 
-    # before_firing would be called by the action manager, call it manually
-    # after_fired should be called by the action manager once the thread
-    # completes.
     flip_bit = False
     test2 = ActionTest2(None, None, None)
-    test2.before_firing()
-    assert(test2.value is True)
     suppress_errors() # Expect an error, quiet it.
     test2.start()
     test2.join()
@@ -410,10 +409,10 @@ def observable_tests():
 
 counter = 0
 class CountingObserver(CoreObserver):
-    def before_run(self):
+    def before_loop(self):
         global counter
         self.counter = counter
-    def after_run(self):
+    def after_loop(self):
         global counter
         counter = self.counter
     def get_observation(self):

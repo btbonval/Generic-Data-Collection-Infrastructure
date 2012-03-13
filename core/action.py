@@ -14,64 +14,85 @@ Licensed under the Creative Commons Attribution Unported License 3.0
 http://creativecommons.org/licenses/by/3.0/ 
 '''
 
-from threading import Thread
+from gdci.core.thread import CoreThread
 from gdci.core.actionmanager import action_manager
 
-class CoreAction(Thread):
+class CoreAction(CoreThread):
     '''
-    CoreAction is meant to be extended. The fire_action method must
+    CoreAction is meant to be extended. The perform_action() method must
     be overridden to define functionality for any given subclass.
     '''
 
     def __init__(self, observable, initial_state, final_state, *args, **kwargs):
         '''
         Each action should be provided with an observable it is responding to
-        and the state change which was observed. Additional arguments will be
-        passed to Thread's constructor.
+        and the state change which was observed.
+        All additional arguments will be passed to CoreThread's constructor.
         '''
 
+        # By default, assume an action should run once but not loop.
+        if not kwargs.has_key('do_loop') and len(args) < 3:
+            kwargs['do_loop'] = False
+
         # Call superclass constructor
-        Thread.__init__(self, *args, **kwargs)
+        CoreThread.__init__(self, *args, **kwargs)
 
         # Store this as stateful information to be used elsewhere.
         self.observable = observable
         self.initial_state = initial_state
         self.final_state = final_state
 
-    def run(self):
+    def setup(self):
         '''
-        This function will be called by threading.Thread and the code will be
-        run in its own thread. Effectively this function will lay out a
-        sequence of functions that may be overridden. This function should
-        not be overridden.
+        setup is called before perform_action().
+        It is called from within before_loop(); this method should be overridden
+        rather than modifying before_loop().
+        '''
+        pass
+
+    def perform_action(self):
+        '''
+        perform_action should be defined by subclasses to perform whatever
+        functionality is desired when the action is fired.
+        '''
+        raise NotImplementedError("perform_action() must be overridden.")
+
+    def cleanup(self):
+        '''
+        cleanup is called after perform_action() completed running.
+        It is called from within after_loop(); this method should be overridden
+        rather than modifying after_loop().
+        '''
+        pass
+
+    def before_loop(self):
+        '''
+        Before the main_loop() thread has been created, this will get called.
+        Nothing special happens here, besides a call to setup(). This method
+        exists for only consistency. It can be safely overridden.
         '''
 
-        # Perform the main operations for this action.
-        self.fire_action()
+        # Call any setup functionality.
+        self.setup()
+
+    def main_loop(self):
+        '''
+        This function will be called by CoreThread and the code will be
+        run in its own thread.
+        '''
+
+        # Call perform_action in the thread.
+        self.perform_action()
+
+    def after_loop(self):
+        '''
+        After main_loop() has executed, this will be run in the thread.
+        Call any cleanup functions, then inform action_manager execution has 
+        ended.
+        '''
+
+        # Call any cleanup functionality.
+        self.cleanup()
 
         # Report completion of running to the action manager.
         action_manager.action_completed(self)
-
-    def before_firing(self):
-        '''
-        before_firing is intended to be called prior to the thread running.
-        Override it to do any necessary setup. As this method is called by
-        the action manager, save lengthy setup for fire_action so as not to
-        hold up operations.
-        '''
-        pass
-
-    def fire_action(self):
-        '''
-        fire_action should be defined by subclasses to perform whatever
-        functionality is desired when the action is fired.
-        '''
-
-        raise NotImplementedError("CoreAction must be extended by a subclass and fire_action must be overridden.")
-
-    def after_fired(self):
-        '''
-        after_fired is intended to be called after the thread completes running.
-        Override it to do any necessary cleanup.
-        '''
-        pass
