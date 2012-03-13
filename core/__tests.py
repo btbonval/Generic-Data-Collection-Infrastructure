@@ -475,12 +475,15 @@ def am_tests():
     # test the action will fire upon a correct circumstance
     action_manager.check_state_change(test3, State(False,False), \
                                       State(False,True))
+    # Give the threads a moment to process everything.
+    time.sleep(0.1)
     assert(flip_bit)
 
     flip_bit = False
     # test the action will not fire upon a wrong circumstance
     action_manager.check_state_change(test3, State(None,None), \
                                       State(False,False))
+    time.sleep(0.1)
     assert(not flip_bit)
 
     # make sure actions can be unregistered
@@ -491,6 +494,7 @@ def am_tests():
     # make sure other actions are unaffected by the unregistration
     action_manager.check_state_change(test3, State(False,False), \
                                       State(True,True))
+    time.sleep(0.1)
     assert(flip_bit)
     # add back the action that was unregistered
     test3.register_action(ActionTest2, State(False,False), State(False,True))
@@ -550,3 +554,8 @@ if __name__ == '__main__':
     print "Running Action Manager tests."
     am_tests()
     print "Action Manager tests completed."
+
+    print ""
+    print "Testing that execution ends when action_manager thread is stopped."
+    print "This will implicitly show itself if the test doesn't terminate now."
+    action_manager.stop()

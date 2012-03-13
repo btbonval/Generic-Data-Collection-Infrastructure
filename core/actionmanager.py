@@ -15,24 +15,27 @@ Licensed under the Creative Commons Attribution Unported License 3.0
 http://creativecommons.org/licenses/by/3.0/ 
 '''
 
+import signal
 import logging
 from Queue import Queue
 
 from gdci.core.state import StateCollection
-from gdci.core.singleton import Singleton
+from gdci.core.thread import CoreThread
 from gdci.core.rwlock import ReadWriteLock
+from gdci.core.singleton import Singleton
 
 # Initialize logging utility.
 log = logging.getLogger('ActionManager')
 
-class CoreActionManager(object):
+class CoreActionManager(CoreThread):
     '''
     CoreActionManager acts as a registry for actions to be fired in response
     to observations. Fired actions will be run in individual threads to
     increase parallel utility. Actions are supplied as classes, not objects,
     and will be instantiated as objects when fired.
 
-    This class is implemented as a singleton.
+    This class is implemented as a singleton thread.
+    As a thread, it must be start()ed. 
     '''
 
     # Cause this object to be a singleton by creating the class using
@@ -41,10 +44,13 @@ class CoreActionManager(object):
     __metaclass__ = Singleton
 
     def __init__(self, *args, **kwargs):
-        ''' Initialize local variables. '''
+        '''
+        Initialize local variables.
+        All arguments will be passed into CoreThread.
+        '''
 
         # Call superclass constructor.
-        object.__init__(self, *args, **kwargs)
+        CoreThread.__init__(self, *args, **kwargs)
 
         # Prepare a mutex to prevent concurrent race conditions when
         # modifying and accessing data in this object by multiple threads.
@@ -191,20 +197,18 @@ class CoreActionManager(object):
             for action in actions:
                 self.action_queue.put( (action, observation, initial_state, final_state) )
 
-        # Run all queued actions
-        self.run_actions()
-
-    def run_actions(self):
+    def main_loop(self):
         '''
+        This method will be called periodically by Action Manager thread.
         Consume actions from the action queue, fire them, and resolve them.
         '''
-        # TODO split this up so a single action is called at a time
 
         # Draw off the actions from the queue while locking to modify.
         queued_actions = []
         with self.access_lock.Write:
             while not self.action_queue.empty():
                 queued_actions.append( self.action_queue.get() )
+        # TODO make this method atomic: upon failure, restore action queue
 
         # Process actions in order and kick them off.
         for queued_action in queued_actions:
@@ -219,7 +223,7 @@ class CoreActionManager(object):
                 # can update the dictionary.
 
                 # track thread. each threaded action should be unique.
-                with self.access_lock.Read:
+                with self.access_lock.Write:
                     if self.thread_mapping.has_key(thread):
                         log.warning('Threaded action %s already being tracked!', thread)
                     self.thread_mapping[thread] = key
@@ -249,5 +253,25 @@ class CoreActionManager(object):
                 log.error(msg)
                 raise RuntimeError(msg)
 
+
+
 # Create the singleton.
-action_manager = CoreActionManager()
+# Set the loop interval for checking new actions to approximately
+# 10 times/sec (allot ~0.1 seconds per check).
+action_manager = CoreActionManager(loop_interval=0.1)
+
+# Action Manager needs a way to know when to stop running.
+def stop_action_manager(signum, frame):
+    log.warn('Captured a signal requesting the action manager end execution.')
+    action_manager.stop()
+    action_manager.join()
+    log.info('Action Manager thread has stopped execution.')
+
+# Intercept signals for Windows!
+# (claims to be supported in Python 2.7, but not found in my 2.7.1)
+#signal.signal(signal.CTRL_C_EVENT, stop_action_manager)
+# Intercept signals for Not Windows!
+signal.signal(signal.SIGINT, stop_action_manager)
+
+# Start the action manager thread a-runnin'!
+action_manager.start()
