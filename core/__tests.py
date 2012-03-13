@@ -197,6 +197,8 @@ def rwlock_tests():
         flip_bit = False
     assert(flip_bit == False)
 
+    # TODO test non-waiting lock calls.
+
     flip_bit = True
     # Test that multiple Reads can overlap.
     greedy_reader_thread = []

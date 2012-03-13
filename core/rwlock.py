@@ -3,7 +3,10 @@ The following is a wrapper around ReadWriteMutex of Dogpile to enable Python's
 with command to be used.
 '''
 
-from dogpile.readwrite_lock import ReadWriteMutex
+from dogpile.readwrite_lock import (
+    ReadWriteMutex,
+    LockError,
+    )
 
 class ReadWriteLock(ReadWriteMutex):
     '''
@@ -14,10 +17,10 @@ class ReadWriteLock(ReadWriteMutex):
         do some reading of the shared resource
     with rwlock.Write:
         do some writing on the shared resource
-    with rwlock.ReadOrNot:
-        do some reading unless the lock was blocked
-    with rwlock.WriteOrNot:
-        do some writing unless the lock was blocked
+    with rwlock.ReadOrNot as success:
+        do some reading unless success is False 
+    with rwlock.WriteOrNot as success:
+        do some writing unless success is False
     '''
 
     def __init__(self, *args, **kwargs):
@@ -52,9 +55,12 @@ class ReadWriteState(object):
     def __enter__(self, *args, **kwargs):
         # Determine state, then call appropriate parent acquire function.
         if self.reader:
-            self.parent_lock.acquire_read_lock(wait=self.do_wait)
+            got_lock = self.parent_lock.acquire_read_lock(wait=self.do_wait)
         else:
-            self.parent_lock.acquire_write_lock(wait=self.do_wait)
+            got_lock = self.parent_lock.acquire_write_lock(wait=self.do_wait)
+        # Make sure to raise an exception if the lock could not be acquired.
+        if not self.do_wait and got_lock is False:
+            raise LockError('Could not acquire lock without waiting.')
 
     def __exit__(self, *args, **kwargs):
         # Determine state, then call appropriate parent acquire function.

@@ -64,6 +64,10 @@ class CoreActionManager(CoreThread):
         self.thread_mapping = {}
         # Maintain a sequence of actions so that firing order is preserved.
         self.action_queue = Queue()
+        # Maintain a counter of failed queue reads and a threshold after which
+        # the read will wait.
+        self.action_queue_read_counter = 0
+        self.action_queue_read_threshold = 3
 
     def associate_action_with_state_change(self, action, observation,
                                            initial_state, final_state):
@@ -202,6 +206,30 @@ class CoreActionManager(CoreThread):
         This method will be called periodically by Action Manager thread.
         Consume actions from the action queue, fire them, and resolve them.
         '''
+
+        # Do a quick test to see if there is anything in the queue, so a Write
+        # lock doesn't hold us back for no reason.
+        empty_queue = False
+        if self.action_queue_read_counter < self.action_queue_read_threshold:
+            try:
+                with self.access_lock.ReadOrNot:
+                    empty_queue = self.action_queue.empty()
+                    self.action_queue_read_counter = 0
+            except LockError:
+                # Failed to get a read lock, which means a write must be
+                # ongoing. Try again on the next loop. Pretend queue was
+                # empty for now.
+                self.action_queue_read_counter = \
+                        self.action_queue_read_counter + 1
+                empty_queue = True
+        else:
+            # After 3 failed attempts, wait for the lock.
+            log.warn('Action Manager has failed to acquire a read lock three times in a row. Attempting to wait on the lock. If a write lock did not release, this could permanently stall the Action Manager.')
+            with self.access_lock.Read:
+                empty_queue = self.action_queue.empty()
+                self.action_queue_read_counter = 0
+        if empty_queue:
+            return
 
         # Draw off the actions from the queue while locking to modify.
         queued_actions = []
