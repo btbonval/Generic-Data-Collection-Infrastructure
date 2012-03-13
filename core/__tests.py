@@ -7,6 +7,8 @@ Licensed under the Creative Commons Attribution Unported License 3.0
 http://creativecommons.org/licenses/by/3.0/ 
 '''
 
+# TODO Encapsulate repetitive tests into functions to reduce copy/paste error
+
 import sys
 import time
 import logging
@@ -15,11 +17,14 @@ import threading
 from gdci.core.state import State
 from gdci.core.state import StateCollection
 from gdci.core.action import CoreAction
-from gdci.core.rwlock import ReadWriteLock
 from gdci.core.observable import CoreObserver
 from gdci.core.observable import CoreObservable
 from gdci.core.actionmanager import action_manager
 from gdci.core.actionmanager import CoreActionManager
+from gdci.core.rwlock import (
+    ReadWriteLock,
+    LockError
+    )
 
 # ---
 
@@ -197,8 +202,6 @@ def rwlock_tests():
         flip_bit = False
     assert(flip_bit == False)
 
-    # TODO test non-waiting lock calls.
-
     flip_bit = True
     # Test that multiple Reads can overlap.
     greedy_reader_thread = []
@@ -207,6 +210,8 @@ def rwlock_tests():
     for i in range(0, num_readers):
         greedy_reader_thread.append(threading.Thread(target=greedy_reader))
         greedy_reader_thread[i].start()
+    # Wait a moment for the threads to get up and going.
+    time.sleep(0.01)
     # Ensure the above sitting read locks don't block
     begin = time.time()
     with module_rwlock.Read:
@@ -222,6 +227,7 @@ def rwlock_tests():
     flip_bit = True
     greedy_reading_thread = threading.Thread(target=greedy_reader)
     greedy_reading_thread.start()
+    time.sleep(0.01)
     begin = time.time()
     with module_rwlock.Write:
         flip_bit = False
@@ -237,6 +243,7 @@ def rwlock_tests():
     flip_bit = False
     greedy_writing_thread = threading.Thread(target=greedy_writer)
     greedy_writing_thread.start()
+    time.sleep(0.01)
     begin = time.time()
     with module_rwlock.Read:
         # This should not read until the writer has modified the value
@@ -250,6 +257,7 @@ def rwlock_tests():
     flip_bit = False
     greedy_writing_thread = threading.Thread(target=greedy_writer)
     greedy_writing_thread.start()
+    time.sleep(0.01)
     begin = time.time()
     # By the time the write unlocks, the other writer should have flipped the
     # bit.
@@ -260,6 +268,78 @@ def rwlock_tests():
     greedy_writing_thread.join()
     assert(flip_bit == False)
     assert(finish - begin > 0.5)
+
+    # Test non-waiting lock calls.
+    with module_rwlock.WriteOrNot as lock_response:
+        assert(lock_response is not True)
+    with module_rwlock.ReadOrNot as lock_response:
+        assert(lock_response is not True)
+
+    # Test non-waiting read locks are not blocked by read locks.
+    flip_bit = True
+    greedy_reading_thread = threading.Thread(target=greedy_reader)
+    greedy_reading_thread.start()
+    time.sleep(0.01)
+    try:
+        with module_rwlock.ReadOrNot as lock_response:
+            assert(lock_response is not True)
+    except LockError:
+        assert(False)
+    greedy_reading_thread.join()
+
+    # Test non-waiting read locks are blocked by write locks.
+    flip_bit = False
+    greedy_writing_thread = threading.Thread(target=greedy_writer)
+    greedy_writing_thread.start()
+    time.sleep(0.01)
+    try:
+        with module_rwlock.ReadOrNot as lock_response:
+            assert(lock_response is not False)
+        # Technically this shouldn't execute, but meh. Here it is anyway.
+        assert(True)
+    except LockError:
+        # This is expected.
+        pass
+    else:
+        assert(False)
+    greedy_writing_thread.join()
+    assert(flip_bit)
+    
+    # Test non-waiting write locks are blocked by write locks.
+    flip_bit = False
+    greedy_writing_thread = threading.Thread(target=greedy_writer)
+    greedy_writing_thread.start()
+    time.sleep(0.01)
+    try:
+        with module_rwlock.WriteOrNot as lock_response:
+            assert(lock_response is not False)
+        # Technically this shouldn't execute, but meh. Here it is anyway.
+        assert(True)
+    except LockError:
+        # This is expected.
+        pass
+    else:
+        assert(False)
+    greedy_writing_thread.join()
+    assert(flip_bit)
+
+    # Test non-waiting write locks are blocked by read locks.
+    flip_bit = True
+    greedy_reading_thread = threading.Thread(target=greedy_reader)
+    greedy_reading_thread.start()
+    time.sleep(0.01)
+    try:
+        with module_rwlock.WriteOrNot as lock_response:
+            assert(lock_response is not False)
+        # Technically this shouldn't execute, but meh. Here it is anyway.
+        assert(True)
+    except LockError:
+        # This is expected.
+        pass
+    else:
+        assert(False)
+    greedy_writing_thread.join()
+    assert(flip_bit)
 
 # ---
 
