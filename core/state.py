@@ -86,11 +86,12 @@ class State(object):
         '''
 
         # Primary Attributes
+        # TODO make this fancier rather than hard coding the two attributes.
         self.is_operating = is_operating
         self.result = result
+        # Secondary Attributes stored in a dictionary.
         # TODO allow secondary attributes to be set on construction
         # TODO enable creation of secondary attributes outside of construction
-        # Secondary Attributes stored in a dictionary.
         self.secondary_attributes = {}
         self.lock = threading.RLock()
 
@@ -108,7 +109,6 @@ class State(object):
         do not trigger actions, they are not considered here.
         '''
 
-        # TODO make this fancier rather than hard coding the two attributes.
         try:
             return self.is_operating == other.is_operating and \
                    self.result == other.result
