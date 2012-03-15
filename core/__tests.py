@@ -17,15 +17,13 @@ import threading
 from gdci.core.state import State
 from gdci.core.state import StateCollection
 from gdci.core.action import CoreAction
+from gdci.core.rwlock import LockError
+from gdci.core.rwlock import ReadWriteLock
 from gdci.core.thread import CoreThread
 from gdci.core.observable import CoreObserver
 from gdci.core.observable import CoreObservable
 from gdci.core.actionmanager import action_manager
 from gdci.core.actionmanager import CoreActionManager
-from gdci.core.rwlock import (
-    ReadWriteLock,
-    LockError
-    )
 
 # ---
 
@@ -278,10 +276,13 @@ def rwlock_tests():
     assert(finish - begin > 0.5)
 
     # Test non-waiting lock calls.
-    with module_rwlock.WriteOrNot as lock_response:
-        assert(lock_response is not True)
-    with module_rwlock.ReadOrNot as lock_response:
-        assert(lock_response is not True)
+    try:
+        with module_rwlock.WriteOrNot as lock_response:
+            assert(lock_response is True)
+        with module_rwlock.ReadOrNot as lock_response:
+            assert(lock_response is True)
+    except LockError:
+        assert(False)
 
     # Test non-waiting read locks are not blocked by read locks.
     flip_bit = True
@@ -290,7 +291,7 @@ def rwlock_tests():
     time.sleep(0.01)
     try:
         with module_rwlock.ReadOrNot as lock_response:
-            assert(lock_response is not True)
+            assert(lock_response is True)
     except LockError:
         assert(False)
     greedy_reading_thread.join()
@@ -302,7 +303,7 @@ def rwlock_tests():
     time.sleep(0.01)
     try:
         with module_rwlock.ReadOrNot as lock_response:
-            assert(lock_response is not False)
+            assert(lock_response is False)
         # Technically this shouldn't execute, but meh. Here it is anyway.
         assert(True)
     except LockError:
@@ -320,7 +321,7 @@ def rwlock_tests():
     time.sleep(0.01)
     try:
         with module_rwlock.WriteOrNot as lock_response:
-            assert(lock_response is not False)
+            assert(lock_response is False)
         # Technically this shouldn't execute, but meh. Here it is anyway.
         assert(True)
     except LockError:
@@ -338,7 +339,7 @@ def rwlock_tests():
     time.sleep(0.01)
     try:
         with module_rwlock.WriteOrNot as lock_response:
-            assert(lock_response is not False)
+            assert(lock_response is False)
         # Technically this shouldn't execute, but meh. Here it is anyway.
         assert(True)
     except LockError:
@@ -401,7 +402,7 @@ def thread_tests():
     # The additional parameters should do nothing. Execution should be fast.
     flip_bit  = False
     large_delay = 50000
-    thread = ThreadTestOneRun(do_loop=False,loop_interval=large_delay,sleep_delay=large_delay))
+    thread = ThreadTestOneRun(do_loop=False,loop_interval=large_delay,sleep_delay=large_delay)
     thread.start()
     begin = time.time()
     thread.join()
@@ -409,7 +410,7 @@ def thread_tests():
     assert(flip_bit)
     # Need to put some kind of value in here, let's just say 2 seconds.
     # This should not be on the order of seconds.
-    assert(finish - begin > 2)
+    assert(finish - begin < 2.0)
 
     # TODO these tests will be similar if not the same as observer tests
     # reduce duplication of efforts

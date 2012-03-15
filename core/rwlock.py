@@ -64,6 +64,8 @@ class ReadWriteState(object):
         # Make sure to raise an exception if the lock could not be acquired.
         if not self.do_wait and got_lock is False:
             raise LockError('Could not acquire lock without waiting.')
+        if not self.do_wait and got_lock:
+            return got_lock
 
     def __exit__(self, *args, **kwargs):
         # Determine state, then call appropriate parent acquire function.
