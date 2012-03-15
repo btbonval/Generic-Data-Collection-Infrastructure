@@ -14,13 +14,16 @@ class ReadWriteLock(ReadWriteMutex):
 
     rwlock = ReadWriteLock()
     with rwlock.Read:
-        do some reading of the shared resource
+        do some reading of the shared resource after potentially waiting
     with rwlock.Write:
-        do some writing on the shared resource
-    with rwlock.ReadOrNot as success:
-        do some reading unless success is False 
-    with rwlock.WriteOrNot as success:
-        do some writing unless success is False
+        do some writing on the shared resource after potentially waiting
+    try:
+        with rwlock.ReadOrNot:
+            do some reading without waiting
+        with rwlock.WriteOrNot:
+            do some writing without waiting
+    except LockError:
+        do something else without waiting as the lock was busy
     '''
 
     def __init__(self, *args, **kwargs):
