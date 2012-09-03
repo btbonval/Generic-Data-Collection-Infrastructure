@@ -13,9 +13,8 @@ dropped, so an observable cannot be obtain a result across the network).
 
 As a piece of core code, it is not recommended that this class be modified.
 
-Copyright 2012
-Licensed under the Creative Commons Attribution Unported License 3.0
-http://creativecommons.org/licenses/by/3.0/ 
+To the extent possible under law, Bryan Bonvallet has waived all copyright and related or neighboring rights to Generic Data Collection Infrastructure. This work is published from: United States. 
+https://github.com/btbonval/Generic-Data-Collection-Infrastructure
 '''
 
 import copy
